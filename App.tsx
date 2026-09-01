@@ -1,31 +1,50 @@
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import MapView, { Marker } from "react-native-maps";
-import { Text, View } from "react-native";
+import { View } from "react-native";
 import { styles } from "./styles";
+
 import {
   requestForegroundPermissionsAsync,
   getCurrentPositionAsync,
-  type LocationObject,
   watchPositionAsync,
   LocationAccuracy,
+  type LocationObject,
+  type LocationSubscription,
 } from "expo-location";
 
 export default function App() {
   const [location, setLocation] = useState<LocationObject | null>(null);
+
   const mapRef = useRef<MapView | null>(null);
-  async function requestLocationPermission() {
-    const { granted } = await requestForegroundPermissionsAsync();
-    if (granted) {
-      const currentPosition = await getCurrentPositionAsync();
+
+  useEffect(() => {
+    async function requestLocationPermission() {
+      const { granted } = await requestForegroundPermissionsAsync();
+
+      if (!granted) {
+        console.log("Permissão de localização negada");
+        return;
+      }
+
+      const currentPosition = await getCurrentPositionAsync({
+        accuracy: LocationAccuracy.High,
+      });
+
       setLocation(currentPosition);
     }
 
-    useEffect(() => {
-      requestLocationPermission();
-    }, []);
+    requestLocationPermission();
+  }, []);
 
-    useEffect(() => {
-      watchPositionAsync(
+  useEffect(() => {
+    let subscription: LocationSubscription | null = null;
+
+    async function watchLocation() {
+      const { granted } = await requestForegroundPermissionsAsync();
+
+      if (!granted) return;
+
+      subscription = await watchPositionAsync(
         {
           accuracy: LocationAccuracy.High,
           timeInterval: 1000,
@@ -33,14 +52,25 @@ export default function App() {
         },
         (response) => {
           setLocation(response);
+
           mapRef.current?.animateCamera({
             pitch: 70,
-            center: response.coords,
+            center: {
+              latitude: response.coords.latitude,
+              longitude: response.coords.longitude,
+            },
           });
         },
       );
-    }, []);
-  }
+    }
+
+    watchLocation();
+
+    return () => {
+      subscription?.remove();
+    };
+  }, []);
+
   return (
     <View style={styles.container}>
       {location && (
@@ -53,6 +83,7 @@ export default function App() {
             latitudeDelta: 0.005,
             longitudeDelta: 0.005,
           }}
+          showsUserLocation
         >
           <Marker
             coordinate={{
